@@ -1,0 +1,1697 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Chrome Built-in AI チャット</title>
+  <style>
+    * { box-sizing: border-box; }
+    [hidden] { display: none !important; }
+    body {
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+      background-color: #f4f4f9;
+      margin: 0;
+      height: 100vh;
+      overflow: hidden;
+      color: #202124;
+    }
+    .app { display: flex; height: 100vh; }
+
+    .sidebar {
+      width: 260px;
+      flex-shrink: 0;
+      background: #fff;
+      border-right: 1px solid #ddd;
+      display: flex;
+      flex-direction: column;
+    }
+    .sidebar-header {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      padding: 12px 14px;
+      border-bottom: 1px solid #eee;
+      font-weight: bold;
+      font-size: 0.9rem;
+    }
+    #new-chat-btn {
+      background: #1a73e8;
+      color: #fff;
+      border: none;
+      border-radius: 8px;
+      padding: 7px 10px;
+      font-size: 0.8rem;
+      cursor: pointer;
+    }
+    .conversation-list {
+      flex: 1;
+      overflow-y: auto;
+      padding: 8px;
+      display: flex;
+      flex-direction: column;
+      gap: 4px;
+    }
+    .conv-item { display: flex; align-items: center; border-radius: 8px; }
+    .conv-item:hover { background: #f1f3f4; }
+    .conv-item.active { background: #e8f0fe; }
+    .conv-title {
+      flex: 1;
+      min-width: 0;
+      text-align: left;
+      background: none;
+      border: none;
+      padding: 10px;
+      font-size: 0.88rem;
+      color: #202124;
+      cursor: pointer;
+      overflow: hidden;
+      text-overflow: ellipsis;
+      white-space: nowrap;
+    }
+    .conv-delete {
+      background: none;
+      border: none;
+      color: #5f6368;
+      cursor: pointer;
+      font-size: 1rem;
+      padding: 4px 8px;
+      border-radius: 6px;
+      line-height: 1;
+      flex-shrink: 0;
+    }
+    .conv-delete:hover { background: #fce8e6; color: #c5221f; }
+
+    .chat-container {
+      flex: 1;
+      min-width: 0;
+      display: flex;
+      flex-direction: column;
+      background: #fff;
+      max-width: 900px;
+      margin: 0 auto;
+      box-shadow: 0 2px 10px rgba(0,0,0,0.1);
+    }
+    header {
+      background: #1a73e8;
+      color: #fff;
+      padding: 10px 14px;
+      display: flex;
+      align-items: center;
+      gap: 8px;
+    }
+    header h1 {
+      margin: 0;
+      font-size: 1rem;
+      flex: 1;
+      min-width: 0;
+      overflow: hidden;
+      text-overflow: ellipsis;
+      white-space: nowrap;
+    }
+    #status {
+      font-size: 0.72rem;
+      background: rgba(255,255,255,0.2);
+      padding: 4px 8px;
+      border-radius: 12px;
+      white-space: nowrap;
+    }
+    .ghost-btn {
+      background: rgba(255,255,255,0.18);
+      color: #fff;
+      border: none;
+      border-radius: 8px;
+      padding: 6px 10px;
+      font-size: 0.78rem;
+      cursor: pointer;
+      white-space: nowrap;
+    }
+    .ghost-btn:hover:not(:disabled) { background: rgba(255,255,255,0.3); }
+    .ghost-btn:disabled { opacity: 0.45; cursor: not-allowed; }
+    #sidebar-toggle { display: none; }
+
+    #chat-box {
+      flex: 1;
+      padding: 18px;
+      overflow-y: auto;
+      display: flex;
+      flex-direction: column;
+      gap: 14px;
+    }
+    .message {
+      max-width: 85%;
+      padding: 10px 14px;
+      border-radius: 16px;
+      line-height: 1.6;
+      word-wrap: break-word;
+    }
+    .message.user {
+      align-self: flex-end;
+      background: #1a73e8;
+      color: #fff;
+      border-bottom-right-radius: 4px;
+    }
+    .message.user .content { white-space: pre-wrap; }
+    .message.ai {
+      align-self: flex-start;
+      background: #e8eaed;
+      color: #202124;
+      border-bottom-left-radius: 4px;
+    }
+    .message.system {
+      align-self: center;
+      background: #fef7e0;
+      color: #b06000;
+      font-size: 0.82rem;
+      border-radius: 8px;
+      max-width: 92%;
+    }
+    .message.streaming .content { white-space: pre-wrap; }
+
+    .message.ai .content > :first-child { margin-top: 0; }
+    .message.ai .content > :last-child { margin-bottom: 0; }
+    .message.ai p { margin: 0 0 8px; }
+    .message.ai h1, .message.ai h2, .message.ai h3,
+    .message.ai h4, .message.ai h5, .message.ai h6 {
+      margin: 10px 0 6px;
+      line-height: 1.3;
+      font-size: 1.05rem;
+    }
+    .message.ai ul, .message.ai ol { margin: 6px 0; padding-left: 22px; }
+    .message.ai a { color: #1a73e8; }
+    .message.ai code {
+      background: rgba(0,0,0,0.08);
+      border-radius: 4px;
+      padding: 1px 5px;
+      font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+      font-size: 0.9em;
+    }
+    .code-block {
+      background: #202124;
+      color: #e8eaed;
+      border-radius: 8px;
+      overflow: hidden;
+      margin: 8px 0;
+    }
+    .code-head {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      padding: 4px 10px;
+      background: #2d2f31;
+      font-size: 0.72rem;
+      color: #bdc1c6;
+    }
+    .code-head .copy-code {
+      background: none;
+      border: 1px solid #5f6368;
+      color: #e8eaed;
+      border-radius: 4px;
+      padding: 1px 8px;
+      font-size: 0.7rem;
+      cursor: pointer;
+    }
+    .code-block pre { margin: 0; padding: 12px; overflow-x: auto; }
+    .code-block code {
+      background: none;
+      padding: 0;
+      color: inherit;
+      font-size: 0.85rem;
+    }
+    .msg-images { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 8px; }
+    .msg-images img {
+      max-width: 180px;
+      max-height: 180px;
+      border-radius: 8px;
+      display: block;
+    }
+    .msg-audio { display: block; margin-top: 8px; max-width: 100%; height: 36px; }
+
+    .msg-actions {
+      display: flex;
+      gap: 6px;
+      margin-top: 8px;
+      opacity: 0.55;
+      transition: opacity 0.15s;
+    }
+    .message:hover .msg-actions, .message:focus-within .msg-actions { opacity: 1; }
+    .action-btn {
+      background: transparent;
+      border: 1px solid currentColor;
+      color: inherit;
+      border-radius: 6px;
+      font-size: 0.68rem;
+      padding: 2px 8px;
+      cursor: pointer;
+      opacity: 0.85;
+    }
+    .action-btn:hover { opacity: 1; }
+
+    .preview-area {
+      display: none;
+      flex-wrap: wrap;
+      gap: 10px;
+      padding: 12px 16px 0;
+      background: #fff;
+      border-top: 1px solid #ddd;
+    }
+    .preview-item {
+      position: relative;
+      width: 72px;
+      height: 72px;
+      border-radius: 8px;
+      overflow: hidden;
+      border: 1px solid #ddd;
+      background: #f4f4f9;
+    }
+    .preview-item img {
+      width: 100%;
+      height: 100%;
+      object-fit: cover;
+      display: block;
+    }
+    .preview-item .remove-btn {
+      position: absolute;
+      top: 2px;
+      right: 2px;
+    }
+    .remove-btn {
+      width: 20px;
+      height: 20px;
+      padding: 0;
+      border: none;
+      border-radius: 50%;
+      background: rgba(0,0,0,0.6);
+      color: #fff;
+      font-size: 13px;
+      line-height: 1;
+      cursor: pointer;
+      flex-shrink: 0;
+    }
+    .audio-preview {
+      display: flex;
+      align-items: center;
+      padding: 4px 8px 4px 4px;
+      background: #f4f4f9;
+      border: 1px solid #ddd;
+      border-radius: 8px;
+    }
+    .audio-preview audio { height: 32px; max-width: 220px; }
+    .audio-preview .remove-btn { margin-left: 6px; }
+
+    .recording-indicator {
+      padding: 8px 16px 0;
+      color: #d93025;
+      font-size: 0.8rem;
+      font-weight: bold;
+    }
+
+    .input-area {
+      display: flex;
+      align-items: flex-end;
+      gap: 8px;
+      padding: 12px 16px;
+      border-top: 1px solid #ddd;
+      background: #fff;
+    }
+    .tool-btn {
+      background: #5f6368;
+      color: #fff;
+      border: none;
+      border-radius: 8px;
+      height: 44px;
+      padding: 0 12px;
+      font-size: 0.8rem;
+      cursor: pointer;
+      white-space: nowrap;
+    }
+    .tool-btn:hover:not(:disabled) { background: #3c4043; }
+    .tool-btn:disabled { background: #ccc; cursor: not-allowed; }
+    .tool-btn.recording { background: #d93025; }
+    #prompt-input {
+      flex: 1;
+      min-width: 0;
+      resize: none;
+      border: 1px solid #ccc;
+      border-radius: 8px;
+      padding: 10px;
+      font-size: 0.98rem;
+      font-family: inherit;
+      height: 44px;
+      max-height: 160px;
+      line-height: 1.4;
+    }
+    #prompt-input:disabled { background: #f8f9fa; }
+    #send-btn, #stop-btn {
+      border: none;
+      border-radius: 8px;
+      height: 44px;
+      padding: 0 18px;
+      font-size: 0.92rem;
+      font-weight: bold;
+      cursor: pointer;
+      white-space: nowrap;
+    }
+    #send-btn { background: #1a73e8; color: #fff; }
+    #send-btn:disabled { background: #ccc; cursor: not-allowed; }
+    #stop-btn { background: #d93025; color: #fff; }
+
+    .modal {
+      position: fixed;
+      inset: 0;
+      background: rgba(0,0,0,0.4);
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      padding: 16px;
+      z-index: 50;
+    }
+    .modal-content {
+      background: #fff;
+      border-radius: 12px;
+      width: 100%;
+      max-width: 560px;
+      padding: 20px;
+      box-shadow: 0 10px 30px rgba(0,0,0,0.2);
+    }
+    .modal-content h2 { margin: 0 0 16px; font-size: 1.1rem; }
+    .field { margin-bottom: 14px; }
+    .field label {
+      display: block;
+      font-size: 0.85rem;
+      color: #5f6368;
+      margin-bottom: 6px;
+    }
+    .field textarea, .field select {
+      width: 100%;
+      border: 1px solid #ccc;
+      border-radius: 8px;
+      padding: 10px;
+      font-family: inherit;
+      font-size: 0.95rem;
+    }
+    .field textarea { min-height: 100px; resize: vertical; }
+    .hint { font-size: 0.75rem; color: #80868b; margin: 4px 0 0; }
+    .modal-actions { display: flex; justify-content: flex-end; gap: 10px; margin-top: 16px; }
+    .modal-actions .primary {
+      background: #1a73e8;
+      color: #fff;
+      border: none;
+      border-radius: 8px;
+      padding: 9px 16px;
+      cursor: pointer;
+    }
+    .modal-actions .secondary {
+      background: #e8eaed;
+      color: #202124;
+      border: none;
+      border-radius: 8px;
+      padding: 9px 16px;
+      cursor: pointer;
+    }
+    .toast {
+      position: fixed;
+      left: 50%;
+      bottom: 24px;
+      transform: translateX(-50%);
+      background: #202124;
+      color: #fff;
+      padding: 8px 16px;
+      border-radius: 20px;
+      font-size: 0.85rem;
+      z-index: 100;
+    }
+
+    @media (max-width: 800px) {
+      #sidebar-toggle { display: inline-block; }
+      .sidebar {
+        position: fixed;
+        top: 0;
+        bottom: 0;
+        left: -280px;
+        z-index: 40;
+        transition: left 0.2s;
+        box-shadow: 2px 0 12px rgba(0,0,0,0.15);
+      }
+      body.sidebar-open .sidebar { left: 0; }
+      .chat-container { max-width: 100%; }
+    }
+  </style>
+</head>
+<body>
+
+<div class="app">
+  <aside class="sidebar">
+    <div class="sidebar-header">
+      <span>会話</span>
+      <button id="new-chat-btn" type="button">+ 新しい会話</button>
+    </div>
+    <div id="conversation-list" class="conversation-list"></div>
+  </aside>
+
+  <main class="chat-container">
+    <header>
+      <button id="sidebar-toggle" class="ghost-btn" type="button" title="会話一覧">一覧</button>
+      <h1 id="chat-title">Chrome Built-in AI Chat</h1>
+      <span id="status">確認中...</span>
+      <button id="reset-btn" class="ghost-btn" type="button" title="この会話をクリア">クリア</button>
+      <button id="settings-btn" class="ghost-btn" type="button" title="システムプロンプトと応答スタイル">設定</button>
+    </header>
+
+    <div id="chat-box"></div>
+
+    <div id="preview-area" class="preview-area"></div>
+    <div id="recording-indicator" class="recording-indicator" hidden>録音中... もう一度「停止」を押してください</div>
+
+    <div class="input-area">
+      <button id="attach-btn" class="tool-btn" type="button" title="画像を添付（貼り付け・ドラッグ＆ドロップも可）" disabled>画像</button>
+      <button id="mic-btn" class="tool-btn" type="button" title="音声を録音" disabled>音声</button>
+      <textarea id="prompt-input" placeholder="メッセージを入力（Shift+Enterで改行 / Enterで送信）" disabled></textarea>
+      <button id="send-btn" type="button" disabled>送信</button>
+      <button id="stop-btn" type="button" hidden>停止</button>
+    </div>
+  </main>
+</div>
+
+<input type="file" id="file-input" accept="image/*" multiple hidden>
+
+<div id="settings-modal" class="modal" hidden>
+  <div class="modal-content">
+    <h2>設定</h2>
+    <div class="field">
+      <label for="system-prompt-input">システムプロンプト</label>
+      <textarea id="system-prompt-input"></textarea>
+    </div>
+    <div class="field">
+      <label for="sampling-mode-select">応答スタイル（創造性）</label>
+      <select id="sampling-mode-select">
+        <option value="most-predictable">最も予測的</option>
+        <option value="predictable">予測的</option>
+        <option value="slightly-predictable">やや予測的</option>
+        <option value="balanced">バランス（既定）</option>
+        <option value="slightly-creative">やや創造的</option>
+        <option value="creative">創造的</option>
+        <option value="most-creative">最も創造的</option>
+      </select>
+      <p class="hint">samplingMode は対応環境でのみ反映されます。保存するとセッションを再初期化します。</p>
+    </div>
+    <div class="modal-actions">
+      <button id="settings-cancel" class="secondary" type="button">キャンセル</button>
+      <button id="settings-save" class="primary" type="button">保存</button>
+    </div>
+  </div>
+</div>
+
+<div id="toast" class="toast" hidden></div>
+
+<script>
+  const statusEl = document.getElementById('status');
+  const chatBox = document.getElementById('chat-box');
+  const inputEl = document.getElementById('prompt-input');
+  const sendBtn = document.getElementById('send-btn');
+  const stopBtn = document.getElementById('stop-btn');
+  const resetBtn = document.getElementById('reset-btn');
+  const attachBtn = document.getElementById('attach-btn');
+  const micBtn = document.getElementById('mic-btn');
+  const fileInput = document.getElementById('file-input');
+  const previewArea = document.getElementById('preview-area');
+  const recordingIndicator = document.getElementById('recording-indicator');
+  const chatContainer = document.querySelector('.chat-container');
+  const conversationListEl = document.getElementById('conversation-list');
+  const newChatBtn = document.getElementById('new-chat-btn');
+  const sidebarToggle = document.getElementById('sidebar-toggle');
+  const chatTitleEl = document.getElementById('chat-title');
+  const settingsBtn = document.getElementById('settings-btn');
+  const settingsModal = document.getElementById('settings-modal');
+  const systemPromptInput = document.getElementById('system-prompt-input');
+  const samplingSelect = document.getElementById('sampling-mode-select');
+  const settingsCancelBtn = document.getElementById('settings-cancel');
+  const settingsSaveBtn = document.getElementById('settings-save');
+  const toastEl = document.getElementById('toast');
+
+  const STORAGE_KEY = 'localchat.conversations.v1';
+  const DEFAULT_SYSTEM_PROMPT = 'あなたは親切で簡潔に答える日本語のAIアシスタントです。画像や音声が添付された場合は内容を読み取って回答してください。';
+  const DEFAULT_SAMPLING_MODE = 'balanced';
+  const MODEL_LANGUAGES = ['ja', 'en'];
+
+  let api = null;
+  let aiReady = false;
+  let session = null;
+  let sessionSnapshot = null;
+  let sessionCaps = { image: false, audio: false };
+  let availableImage = false;
+  let availableAudio = false;
+  let generating = false;
+  let sending = false;
+  let controller = null;
+  let generationPromise = null;
+  let pendingImages = [];
+  let pendingAudio = null;
+  let mediaRecorder = null;
+  let mediaStream = null;
+  let recordedChunks = [];
+  let recording = false;
+  let toastTimer = null;
+  let conversations = [];
+  let active = null;
+
+  function newId() {
+    if (self.crypto && typeof crypto.randomUUID === 'function') return crypto.randomUUID();
+    return 'c' + Date.now().toString(36) + Math.random().toString(36).slice(2);
+  }
+
+  function newConversation(overrides = {}) {
+    return Object.assign({
+      id: newId(),
+      title: '新しい会話',
+      systemPrompt: DEFAULT_SYSTEM_PROMPT,
+      samplingMode: DEFAULT_SAMPLING_MODE,
+      messages: [],
+      createdAt: Date.now(),
+      updatedAt: Date.now()
+    }, overrides);
+  }
+
+  function saveConversations() {
+    try {
+      localStorage.setItem(STORAGE_KEY, JSON.stringify(conversations));
+    } catch (err) {
+      console.warn(err);
+      toast('履歴を保存できませんでした（容量超過の可能性）');
+    }
+  }
+
+  function loadConversations() {
+    try {
+      const raw = localStorage.getItem(STORAGE_KEY);
+      if (!raw) return;
+      const parsed = JSON.parse(raw);
+      if (!Array.isArray(parsed)) return;
+      conversations = parsed
+        .filter((conv) => conv && typeof conv.id === 'string' && Array.isArray(conv.messages))
+        .map((conv) => ({
+          id: conv.id,
+          title: conv.title || '新しい会話',
+          systemPrompt: conv.systemPrompt || DEFAULT_SYSTEM_PROMPT,
+          samplingMode: conv.samplingMode || DEFAULT_SAMPLING_MODE,
+          messages: conv.messages,
+          createdAt: conv.createdAt || Date.now(),
+          updatedAt: conv.updatedAt || Date.now()
+        }));
+      conversations.sort((a, b) => b.updatedAt - a.updatedAt);
+    } catch (err) {
+      console.warn(err);
+    }
+  }
+
+  function escapeHtml(str) {
+    return String(str).replace(/[&<>"']/g, (ch) => ({
+      '&': '&amp;',
+      '<': '&lt;',
+      '>': '&gt;',
+      '"': '&quot;',
+      "'": '&#39;'
+    }[ch]));
+  }
+
+  function inlineMarkdown(text) {
+    return text
+      .replace(/\*\*([^*]+)\*\*/g, '<strong>$1</strong>')
+      .replace(/(^|[^*])\*([^*\n]+)\*/g, '$1<em>$2</em>')
+      .replace(/\[([^\]]+)\]\((https?:\/\/[^\s)]+)\)/g, '<a href="$2" target="_blank" rel="noopener noreferrer">$1</a>');
+  }
+
+  function codeBlockHtml(lang, code) {
+    const label = lang ? escapeHtml(lang) : 'code';
+    return `<div class="code-block"><div class="code-head"><span>${label}</span><button type="button" class="copy-code">コピー</button></div><pre><code>${escapeHtml(code.replace(/\n$/, ''))}</code></pre></div>`;
+  }
+
+  function renderMarkdown(source) {
+    const blocks = [];
+    let text = String(source).replace(/```([^\n`]*)\n?([\s\S]*?)```/g, (match, lang, code) => {
+      const index = blocks.push({ lang: lang.trim(), code }) - 1;
+      return `\u0000B${index}\u0000`;
+    });
+    const inlines = [];
+    text = text.replace(/`([^`\n]+)`/g, (match, code) => {
+      const index = inlines.push(code) - 1;
+      return `\u0000I${index}\u0000`;
+    });
+    text = escapeHtml(text);
+
+    const lines = text.split('\n');
+    const out = [];
+    let paragraph = [];
+    let listType = null;
+
+    const flushParagraph = () => {
+      if (paragraph.length) {
+        out.push(`<p>${inlineMarkdown(paragraph.join('<br>'))}</p>`);
+        paragraph = [];
+      }
+    };
+    const closeList = () => {
+      if (listType) {
+        out.push(`</${listType}>`);
+        listType = null;
+      }
+    };
+
+    for (const line of lines) {
+      const heading = line.match(/^(#{1,6})\s+(.*)$/);
+      if (heading) {
+        flushParagraph();
+        closeList();
+        const level = heading[1].length;
+        out.push(`<h${level}>${inlineMarkdown(heading[2])}</h${level}>`);
+        continue;
+      }
+
+      const unordered = line.match(/^\s*[-*+]\s+(.*)$/);
+      const ordered = line.match(/^\s*\d+\.\s+(.*)$/);
+      if (unordered || ordered) {
+        flushParagraph();
+        const type = unordered ? 'ul' : 'ol';
+        if (listType !== type) {
+          closeList();
+          out.push(`<${type}>`);
+          listType = type;
+        }
+        out.push(`<li>${inlineMarkdown((unordered || ordered)[1])}</li>`);
+        continue;
+      }
+
+      if (!line.trim()) {
+        flushParagraph();
+        closeList();
+        continue;
+      }
+
+      const block = line.match(/^\u0000B(\d+)\u0000$/);
+      if (block) {
+        flushParagraph();
+        closeList();
+        const info = blocks[Number(block[1])];
+        out.push(codeBlockHtml(info.lang, info.code));
+        continue;
+      }
+
+      closeList();
+      paragraph.push(line);
+    }
+    flushParagraph();
+    closeList();
+
+    let html = out.join('\n');
+    html = html.replace(/\u0000B(\d+)\u0000/g, (match, index) => {
+      const info = blocks[Number(index)];
+      return codeBlockHtml(info.lang, info.code);
+    });
+    html = html.replace(/\u0000I(\d+)\u0000/g, (match, index) => `<code>${escapeHtml(inlines[Number(index)])}</code>`);
+    return html;
+  }
+
+  function blobToDataUrl(blob) {
+    return new Promise((resolve, reject) => {
+      const reader = new FileReader();
+      reader.onload = () => resolve(reader.result);
+      reader.onerror = () => reject(reader.error || new Error('読み込みに失敗しました'));
+      reader.readAsDataURL(blob);
+    });
+  }
+
+  async function dataUrlToBlob(dataUrl) {
+    const response = await fetch(dataUrl);
+    return response.blob();
+  }
+
+  function toast(message) {
+    toastEl.textContent = message;
+    toastEl.hidden = false;
+    clearTimeout(toastTimer);
+    toastTimer = setTimeout(() => {
+      toastEl.hidden = true;
+    }, 2200);
+  }
+
+  async function copyText(text) {
+    if (!text) {
+      toast('コピーする内容がありません');
+      return;
+    }
+    try {
+      await navigator.clipboard.writeText(text);
+      toast('コピーしました');
+    } catch (err) {
+      const area = document.createElement('textarea');
+      area.value = text;
+      area.style.position = 'fixed';
+      area.style.opacity = '0';
+      document.body.appendChild(area);
+      area.select();
+      try {
+        document.execCommand('copy');
+        toast('コピーしました');
+      } catch (e) {
+        toast('コピーできませんでした');
+      }
+      area.remove();
+    }
+  }
+
+  function scrollToBottom() {
+    chatBox.scrollTop = chatBox.scrollHeight;
+  }
+
+  function appendSystem(text) {
+    const el = document.createElement('div');
+    el.className = 'message system';
+    el.textContent = text;
+    chatBox.appendChild(el);
+    scrollToBottom();
+  }
+
+  function makeActionButton(label, action) {
+    const button = document.createElement('button');
+    button.type = 'button';
+    button.className = 'action-btn';
+    button.dataset.action = action;
+    button.textContent = label;
+    return button;
+  }
+
+  function createMessageElement(message, index, isLastAssistant) {
+    const el = document.createElement('div');
+    el.className = `message ${message.role === 'user' ? 'user' : 'ai'}`;
+    el.dataset.index = String(index);
+
+    const content = document.createElement('div');
+    content.className = 'content';
+
+    if (message.role === 'user') {
+      if (message.text) content.appendChild(document.createTextNode(message.text));
+      if (message.images && message.images.length) {
+        const wrap = document.createElement('div');
+        wrap.className = 'msg-images';
+        message.images.forEach((src) => {
+          const img = document.createElement('img');
+          img.src = src;
+          img.alt = '添付画像';
+          img.loading = 'lazy';
+          wrap.appendChild(img);
+        });
+        content.appendChild(wrap);
+      }
+      if (message.audio) {
+        const audio = document.createElement('audio');
+        audio.controls = true;
+        audio.src = message.audio;
+        audio.className = 'msg-audio';
+        content.appendChild(audio);
+      }
+    } else {
+      content.innerHTML = renderMarkdown(message.text || '');
+    }
+
+    el.appendChild(content);
+
+    const actions = document.createElement('div');
+    actions.className = 'msg-actions';
+    actions.appendChild(makeActionButton('コピー', 'copy'));
+    if (message.role === 'assistant') {
+      if (isLastAssistant) actions.appendChild(makeActionButton('再生成', 'regen'));
+      actions.appendChild(makeActionButton('分岐', 'branch'));
+    }
+    el.appendChild(actions);
+
+    return el;
+  }
+
+  function findLastAssistantIndex(messages) {
+    for (let i = messages.length - 1; i >= 0; i--) {
+      if (messages[i].role === 'assistant') return i;
+    }
+    return -1;
+  }
+
+  function renderConversation() {
+    chatBox.innerHTML = '';
+    if (!active) return;
+    const lastAssistant = findLastAssistantIndex(active.messages);
+    active.messages.forEach((message, index) => {
+      chatBox.appendChild(createMessageElement(message, index, index === lastAssistant));
+    });
+    scrollToBottom();
+  }
+
+  function renderSidebar() {
+    conversationListEl.innerHTML = '';
+    conversations.forEach((conv) => {
+      const item = document.createElement('div');
+      item.className = 'conv-item' + (active && conv.id === active.id ? ' active' : '');
+
+      const titleBtn = document.createElement('button');
+      titleBtn.type = 'button';
+      titleBtn.className = 'conv-title';
+      titleBtn.textContent = conv.title || '新しい会話';
+      titleBtn.title = conv.title || '新しい会話';
+      titleBtn.addEventListener('click', () => {
+        selectConversation(conv.id);
+      });
+
+      const deleteBtn = document.createElement('button');
+      deleteBtn.type = 'button';
+      deleteBtn.className = 'conv-delete';
+      deleteBtn.textContent = '×';
+      deleteBtn.title = '会話を削除';
+      deleteBtn.addEventListener('click', (event) => {
+        event.stopPropagation();
+        deleteConversation(conv.id);
+      });
+
+      item.append(titleBtn, deleteBtn);
+      conversationListEl.appendChild(item);
+    });
+  }
+
+  function updateHeader() {
+    chatTitleEl.textContent = active ? active.title : 'Chrome Built-in AI Chat';
+  }
+
+  function renderPreview() {
+    previewArea.innerHTML = '';
+    pendingImages.forEach((item, index) => {
+      const wrap = document.createElement('div');
+      wrap.className = 'preview-item';
+
+      const img = document.createElement('img');
+      img.src = item.url;
+      img.alt = item.file.name;
+
+      const remove = document.createElement('button');
+      remove.type = 'button';
+      remove.className = 'remove-btn';
+      remove.textContent = '×';
+      remove.title = '添付を削除';
+      remove.addEventListener('click', () => {
+        URL.revokeObjectURL(item.url);
+        pendingImages.splice(index, 1);
+        renderPreview();
+      });
+
+      wrap.append(img, remove);
+      previewArea.appendChild(wrap);
+    });
+
+    if (pendingAudio) {
+      const wrap = document.createElement('div');
+      wrap.className = 'audio-preview';
+
+      const audio = document.createElement('audio');
+      audio.controls = true;
+      audio.src = pendingAudio.url;
+
+      const remove = document.createElement('button');
+      remove.type = 'button';
+      remove.className = 'remove-btn';
+      remove.textContent = '×';
+      remove.title = '音声を削除';
+      remove.addEventListener('click', () => {
+        URL.revokeObjectURL(pendingAudio.url);
+        pendingAudio = null;
+        renderPreview();
+      });
+
+      wrap.append(audio, remove);
+      previewArea.appendChild(wrap);
+    }
+
+    previewArea.style.display = pendingImages.length || pendingAudio ? 'flex' : 'none';
+  }
+
+  function addFiles(fileList) {
+    if (!sessionCaps.image) {
+      toast('この環境では画像入力に対応していません');
+      return;
+    }
+    let added = false;
+    for (const file of fileList) {
+      if (!file.type.startsWith('image/')) continue;
+      pendingImages.push({ file, url: URL.createObjectURL(file) });
+      added = true;
+    }
+    if (added) renderPreview();
+  }
+
+  function clearPending() {
+    pendingImages.forEach((item) => URL.revokeObjectURL(item.url));
+    pendingImages = [];
+    if (pendingAudio) {
+      URL.revokeObjectURL(pendingAudio.url);
+      pendingAudio = null;
+    }
+    renderPreview();
+  }
+
+  function getLanguageModelAPI() {
+    if ('LanguageModel' in self) return self.LanguageModel;
+    if (self.ai && self.ai.languageModel) return self.ai.languageModel;
+    return null;
+  }
+
+  async function checkAvailability(extraInputs) {
+    if (!api || !api.availability) return false;
+    try {
+      const result = await api.availability({
+        expectedInputs: [{ type: 'text', languages: MODEL_LANGUAGES }, ...extraInputs],
+        expectedOutputs: [{ type: 'text', languages: MODEL_LANGUAGES }]
+      });
+      return result !== 'unavailable' && result !== 'no';
+    } catch (err) {
+      return false;
+    }
+  }
+
+  async function detectCapabilities() {
+    availableImage = await checkAvailability([{ type: 'image' }]);
+    if (availableImage) {
+      availableAudio = await checkAvailability([{ type: 'image' }, { type: 'audio' }]);
+    } else {
+      availableAudio = await checkAvailability([{ type: 'audio' }]);
+    }
+  }
+
+  function buildCreateOptions(prompts, samplingMode, caps) {
+    const inputs = [{ type: 'text', languages: MODEL_LANGUAGES }];
+    if (caps.image) inputs.push({ type: 'image' });
+    if (caps.audio) inputs.push({ type: 'audio' });
+
+    const options = {
+      initialPrompts: prompts,
+      expectedInputs: inputs,
+      expectedOutputs: [{ type: 'text', languages: MODEL_LANGUAGES }],
+      monitor(m) {
+        m.addEventListener('downloadprogress', (event) => {
+          const ratio = event.total ? event.loaded / event.total : event.loaded;
+          statusEl.textContent = `DL中: ${Math.round(ratio * 100)}%`;
+        });
+      }
+    };
+    if (samplingMode) options.samplingMode = samplingMode;
+    return options;
+  }
+
+  async function buildInitialPrompts(systemPrompt, messages, caps) {
+    const prompts = [{ role: 'system', content: systemPrompt }];
+    for (const message of messages) {
+      if (message.role === 'assistant') {
+        if (message.text) prompts.push({ role: 'assistant', content: message.text });
+        continue;
+      }
+
+      const hasImages = caps.image && message.images && message.images.length > 0;
+      const hasAudio = caps.audio && !!message.audio;
+
+      if (hasImages || hasAudio) {
+        const content = [{
+          type: 'text',
+          value: message.text || '（添付された内容について説明してください）'
+        }];
+        if (hasImages) {
+          for (const dataUrl of message.images) {
+            content.push({ type: 'image', value: await dataUrlToBlob(dataUrl) });
+          }
+        }
+        if (hasAudio) {
+          content.push({ type: 'audio', value: await dataUrlToBlob(message.audio) });
+        }
+        prompts.push({ role: 'user', content });
+      } else {
+        prompts.push({ role: 'user', content: message.text || '（内容なし）' });
+      }
+    }
+    return prompts;
+  }
+
+  async function createSessionFor(systemPrompt, messages, samplingMode) {
+    const configs = [];
+    if (availableImage || availableAudio) configs.push({ image: availableImage, audio: availableAudio });
+    if (availableImage && availableAudio) configs.push({ image: true, audio: false });
+    configs.push({ image: false, audio: false });
+
+    let lastError = null;
+    for (const caps of configs) {
+      try {
+        const prompts = await buildInitialPrompts(systemPrompt, messages, caps);
+        const created = await api.create(buildCreateOptions(prompts, samplingMode, caps));
+        return { session: created, caps };
+      } catch (err) {
+        lastError = err;
+      }
+    }
+    throw lastError || new Error('セッションを作成できませんでした');
+  }
+
+  function destroySessions() {
+    if (session) {
+      try { session.destroy(); } catch (err) {}
+      session = null;
+    }
+    if (sessionSnapshot) {
+      try { sessionSnapshot.destroy(); } catch (err) {}
+      sessionSnapshot = null;
+    }
+  }
+
+  async function ensureSession() {
+    destroySessions();
+    applyCapsToUI();
+    if (!aiReady || !active) return;
+    const result = await createSessionFor(active.systemPrompt, active.messages, active.samplingMode);
+    session = result.session;
+    sessionCaps = result.caps;
+    applyCapsToUI();
+  }
+
+  async function buildPromptInput(message) {
+    const hasImages = sessionCaps.image && message.images && message.images.length > 0;
+    const hasAudio = sessionCaps.audio && !!message.audio;
+    if (!hasImages && !hasAudio) return message.text || '';
+
+    const content = [{
+      type: 'text',
+      value: message.text || '（添付された内容について説明してください）'
+    }];
+    if (hasImages) {
+      for (const dataUrl of message.images) {
+        content.push({ type: 'image', value: await dataUrlToBlob(dataUrl) });
+      }
+    }
+    if (hasAudio) {
+      content.push({ type: 'audio', value: await dataUrlToBlob(message.audio) });
+    }
+    return [{ role: 'user', content }];
+  }
+
+  function readyStatus() {
+    const extras = [];
+    if (sessionCaps.image) extras.push('画像');
+    if (sessionCaps.audio) extras.push('音声');
+    return extras.length ? `準備完了 (${extras.join('・')})` : '準備完了 (ローカル)';
+  }
+
+  function applyCapsToUI() {
+    const busy = !aiReady || generating || !session;
+    inputEl.disabled = busy;
+    sendBtn.disabled = busy;
+    attachBtn.disabled = busy || !sessionCaps.image;
+    micBtn.disabled = busy || !sessionCaps.audio;
+    settingsBtn.disabled = busy;
+    resetBtn.disabled = generating;
+  }
+
+  function setBusy(on) {
+    generating = on;
+    sendBtn.hidden = on;
+    stopBtn.hidden = !on;
+    applyCapsToUI();
+  }
+
+  function deriveTitle(text, images, audio) {
+    const firstLine = (text || '').split('\n')[0].trim();
+    if (firstLine) return firstLine.length > 30 ? firstLine.slice(0, 30) + '…' : firstLine;
+    if (images && images.length) return '画像について';
+    if (audio) return '音声について';
+    return '新しい会話';
+  }
+
+  async function initAI() {
+    api = getLanguageModelAPI();
+    if (!api) {
+      statusEl.textContent = '非対応環境';
+      appendSystem('このブラウザではBuilt-in AI (Prompt API) が有効になっていません。Chrome 148以降を使用するか、chrome://flags で設定を有効にしてください。');
+      applyCapsToUI();
+      return;
+    }
+
+    try {
+      const availability = api.availability
+        ? await api.availability()
+        : (await api.capabilities()).available;
+
+      if (availability === 'unavailable' || availability === 'no') {
+        statusEl.textContent = '利用不可';
+        appendSystem('デバイス要件を満たしていないか、モデルが利用できません。');
+        applyCapsToUI();
+        return;
+      }
+
+      if (availability === 'downloadable' || availability === 'downloading' || availability === 'after-download') {
+        statusEl.textContent = 'モデル準備中...';
+      }
+
+      await detectCapabilities();
+      aiReady = true;
+      statusEl.textContent = '初期化中...';
+      await ensureSession();
+      statusEl.textContent = readyStatus();
+      applyCapsToUI();
+      inputEl.focus();
+    } catch (err) {
+      console.error(err);
+      aiReady = false;
+      statusEl.textContent = 'エラー';
+      appendSystem(`初期化エラー: ${err.message}`);
+      applyCapsToUI();
+    }
+  }
+
+  async function generateAssistant(userMessage, conv) {
+    if (!session) return;
+
+    const usedSession = session;
+    const myController = new AbortController();
+    controller = myController;
+    setBusy(true);
+
+    const streamEl = document.createElement('div');
+    streamEl.className = 'message ai streaming';
+    const contentEl = document.createElement('div');
+    contentEl.className = 'content';
+    contentEl.textContent = '...';
+    streamEl.appendChild(contentEl);
+    chatBox.appendChild(streamEl);
+    scrollToBottom();
+
+    let full = '';
+    let aborted = false;
+    let errorMessage = null;
+
+    try {
+      if (active === conv && sessionSnapshot) {
+        try { sessionSnapshot.destroy(); } catch (err) {}
+        sessionSnapshot = null;
+      }
+
+      let cloned = null;
+      if (usedSession.clone) {
+        try {
+          cloned = await usedSession.clone({ signal: myController.signal });
+        } catch (err) {
+          cloned = null;
+        }
+      }
+      if (cloned) {
+        if (active === conv) {
+          if (sessionSnapshot) {
+            try { sessionSnapshot.destroy(); } catch (err) {}
+          }
+          sessionSnapshot = cloned;
+        } else {
+          try { cloned.destroy(); } catch (err) {}
+        }
+      }
+
+      const promptInput = await buildPromptInput(userMessage);
+      const stream = usedSession.promptStreaming(promptInput, { signal: myController.signal });
+      let first = true;
+
+      for await (const chunk of stream) {
+        if (first) {
+          contentEl.textContent = '';
+          first = false;
+        }
+        if (chunk.startsWith(full) && full.length > 0) {
+          full = chunk;
+        } else {
+          full += chunk;
+        }
+        contentEl.textContent = full;
+        scrollToBottom();
+      }
+
+      if (full.trim()) {
+        conv.messages.push({ role: 'assistant', text: full });
+        conv.updatedAt = Date.now();
+        saveConversations();
+      }
+    } catch (err) {
+      if (err.name === 'AbortError') {
+        aborted = true;
+        if (full.trim()) {
+          conv.messages.push({ role: 'assistant', text: full });
+          conv.updatedAt = Date.now();
+          saveConversations();
+        }
+      } else {
+        console.error(err);
+        errorMessage = err.message;
+      }
+    } finally {
+      streamEl.remove();
+      if (controller === myController) {
+        controller = null;
+        setBusy(false);
+      }
+      if (active === conv) {
+        renderConversation();
+        if (aborted) appendSystem('生成を中断しました。');
+        if (errorMessage) appendSystem(`エラー: ${errorMessage}`);
+      }
+    }
+  }
+
+  async function stopGeneration() {
+    if (!generating) return;
+    if (controller) controller.abort();
+    if (generationPromise) {
+      try { await generationPromise; } catch (err) {}
+    }
+  }
+
+  async function sendMessage() {
+    if (sending || generating || !session || !active) return;
+
+    let text = inputEl.value.trim();
+    const hasImages = pendingImages.length > 0;
+    const hasAudio = !!pendingAudio;
+    if (!text && !hasImages && !hasAudio) return;
+    if (hasAudio && !text) text = 'この音声を聞き取って、内容に答えてください。';
+
+    sending = true;
+    const conv = active;
+    let message = null;
+
+    try {
+      const images = await Promise.all(pendingImages.map((item) => blobToDataUrl(item.file)));
+      const audio = pendingAudio ? await blobToDataUrl(pendingAudio.blob) : null;
+
+      message = { role: 'user', text, images, audio };
+      conv.messages.push(message);
+      conv.updatedAt = Date.now();
+      if (conv.title === '新しい会話') conv.title = deriveTitle(text, images, audio);
+      saveConversations();
+      clearPending();
+
+      inputEl.value = '';
+      autoResize();
+      renderSidebar();
+      updateHeader();
+      if (active === conv) renderConversation();
+    } catch (err) {
+      console.error(err);
+      toast('送信に失敗しました');
+    } finally {
+      sending = false;
+    }
+
+    if (!message) return;
+
+    generationPromise = generateAssistant(message, conv);
+    await generationPromise;
+    generationPromise = null;
+  }
+
+  async function regenerate() {
+    if (sending || generating || !active) return;
+
+    const messages = active.messages;
+    const lastAssistant = findLastAssistantIndex(messages);
+    if (lastAssistant < 0) return;
+
+    let lastUser = lastAssistant - 1;
+    while (lastUser >= 0 && messages[lastUser].role !== 'user') lastUser--;
+    if (lastUser < 0) return;
+
+    sending = true;
+    try {
+      messages.splice(lastAssistant);
+      active.updatedAt = Date.now();
+      saveConversations();
+
+      if (sessionSnapshot) {
+        if (session) {
+          try { session.destroy(); } catch (err) {}
+        }
+        session = sessionSnapshot;
+        sessionSnapshot = null;
+      } else if (aiReady) {
+        destroySessions();
+        applyCapsToUI();
+        statusEl.textContent = '初期化中...';
+        try {
+          const result = await createSessionFor(active.systemPrompt, messages.slice(0, lastUser), active.samplingMode);
+          session = result.session;
+          sessionCaps = result.caps;
+        } catch (err) {
+          console.error(err);
+          statusEl.textContent = 'エラー';
+          appendSystem(`再初期化エラー: ${err.message}`);
+          renderConversation();
+          applyCapsToUI();
+          return;
+        }
+        statusEl.textContent = readyStatus();
+      }
+
+      renderConversation();
+      applyCapsToUI();
+
+      generationPromise = generateAssistant(messages[lastUser], active);
+      await generationPromise;
+      generationPromise = null;
+    } finally {
+      sending = false;
+    }
+  }
+
+  async function branchFrom(index) {
+    if (!active) return;
+    if (!active.messages[index]) return;
+
+    const branchMessages = JSON.parse(JSON.stringify(active.messages.slice(0, index + 1)));
+    const conv = newConversation({
+      title: (active.title || '会話') + ' の分岐',
+      systemPrompt: active.systemPrompt,
+      samplingMode: active.samplingMode,
+      messages: branchMessages
+    });
+    conversations.unshift(conv);
+    saveConversations();
+    await selectConversation(conv.id);
+    toast('会話を分岐しました');
+  }
+
+  async function selectConversation(id) {
+    if (active && id === active.id && session) {
+      renderSidebar();
+      document.body.classList.remove('sidebar-open');
+      return;
+    }
+
+    await stopGeneration();
+    destroySessions();
+
+    active = conversations.find((conv) => conv.id === id) || conversations[0];
+    if (!active) return;
+
+    clearPending();
+    renderSidebar();
+    updateHeader();
+    renderConversation();
+
+    if (aiReady) {
+      statusEl.textContent = '初期化中...';
+      try {
+        await ensureSession();
+        statusEl.textContent = readyStatus();
+      } catch (err) {
+        console.error(err);
+        statusEl.textContent = 'エラー';
+        appendSystem(`初期化エラー: ${err.message}`);
+      }
+    }
+
+    applyCapsToUI();
+    document.body.classList.remove('sidebar-open');
+  }
+
+  async function createConversation() {
+    const conv = newConversation();
+    conversations.unshift(conv);
+    saveConversations();
+    await selectConversation(conv.id);
+    inputEl.focus();
+  }
+
+  async function deleteConversation(id) {
+    const index = conversations.findIndex((conv) => conv.id === id);
+    if (index < 0) return;
+
+    const wasActive = active && active.id === id;
+    conversations.splice(index, 1);
+
+    if (!wasActive) {
+      saveConversations();
+      renderSidebar();
+      return;
+    }
+
+    await stopGeneration();
+    destroySessions();
+    clearPending();
+
+    if (!conversations.length) conversations.push(newConversation());
+    saveConversations();
+    active = conversations[0];
+    renderSidebar();
+    updateHeader();
+    renderConversation();
+
+    if (aiReady) {
+      statusEl.textContent = '初期化中...';
+      try {
+        await ensureSession();
+        statusEl.textContent = readyStatus();
+      } catch (err) {
+        console.error(err);
+        statusEl.textContent = 'エラー';
+        appendSystem(`初期化エラー: ${err.message}`);
+      }
+    }
+
+    applyCapsToUI();
+  }
+
+  async function clearConversation() {
+    if (generating || !active) return;
+
+    clearPending();
+    active.messages = [];
+    active.title = '新しい会話';
+    active.updatedAt = Date.now();
+    saveConversations();
+    renderSidebar();
+    updateHeader();
+    renderConversation();
+
+    if (aiReady) {
+      statusEl.textContent = '初期化中...';
+      try {
+        await ensureSession();
+        statusEl.textContent = readyStatus();
+      } catch (err) {
+        console.error(err);
+        statusEl.textContent = 'エラー';
+        appendSystem(`初期化エラー: ${err.message}`);
+      }
+    }
+
+    applyCapsToUI();
+    inputEl.focus();
+    toast('会話をクリアしました');
+  }
+
+  function openSettings() {
+    if (!active) return;
+    systemPromptInput.value = active.systemPrompt;
+    samplingSelect.value = active.samplingMode || DEFAULT_SAMPLING_MODE;
+    settingsModal.hidden = false;
+    systemPromptInput.focus();
+  }
+
+  function closeSettings() {
+    settingsModal.hidden = true;
+  }
+
+  async function saveSettings() {
+    if (!active) return;
+
+    active.systemPrompt = systemPromptInput.value.trim() || DEFAULT_SYSTEM_PROMPT;
+    active.samplingMode = samplingSelect.value;
+    active.updatedAt = Date.now();
+    saveConversations();
+    closeSettings();
+
+    if (!aiReady) return;
+
+    statusEl.textContent = '初期化中...';
+    try {
+      await ensureSession();
+      statusEl.textContent = readyStatus();
+    } catch (err) {
+      console.error(err);
+      statusEl.textContent = 'エラー';
+      appendSystem(`初期化エラー: ${err.message}`);
+    }
+    applyCapsToUI();
+    toast('設定を保存しました');
+  }
+
+  function resetRecordingUI() {
+    recording = false;
+    micBtn.classList.remove('recording');
+    micBtn.textContent = '音声';
+    recordingIndicator.hidden = true;
+  }
+
+  async function toggleRecording() {
+    if (recording) {
+      stopRecording();
+      return;
+    }
+    if (!sessionCaps.audio) {
+      toast('この環境では音声入力に対応していません');
+      return;
+    }
+    if (!navigator.mediaDevices || !window.MediaRecorder) {
+      toast('このブラウザは録音に対応していません');
+      return;
+    }
+
+    try {
+      mediaStream = await navigator.mediaDevices.getUserMedia({ audio: true });
+      recordedChunks = [];
+      const recorder = new MediaRecorder(mediaStream);
+      mediaRecorder = recorder;
+
+      recorder.addEventListener('dataavailable', (event) => {
+        if (event.data && event.data.size > 0) recordedChunks.push(event.data);
+      });
+
+      recorder.addEventListener('stop', () => {
+        if (mediaStream) {
+          mediaStream.getTracks().forEach((track) => track.stop());
+          mediaStream = null;
+        }
+        const blob = new Blob(recordedChunks, { type: recorder.mimeType || 'audio/webm' });
+        mediaRecorder = null;
+        resetRecordingUI();
+        if (!blob.size) return;
+        pendingAudio = { blob, url: URL.createObjectURL(blob) };
+        renderPreview();
+      });
+
+      recorder.start();
+      recording = true;
+      micBtn.classList.add('recording');
+      micBtn.textContent = '停止';
+      recordingIndicator.hidden = false;
+    } catch (err) {
+      console.error(err);
+      toast('マイクを使用できませんでした');
+      if (mediaStream) {
+        mediaStream.getTracks().forEach((track) => track.stop());
+        mediaStream = null;
+      }
+      resetRecordingUI();
+    }
+  }
+
+  function stopRecording() {
+    if (mediaRecorder && mediaRecorder.state !== 'inactive') {
+      mediaRecorder.stop();
+    } else {
+      resetRecordingUI();
+    }
+  }
+
+  function autoResize() {
+    inputEl.style.height = 'auto';
+    inputEl.style.height = Math.max(44, Math.min(inputEl.scrollHeight, 160)) + 'px';
+  }
+
+  sendBtn.addEventListener('click', sendMessage);
+  stopBtn.addEventListener('click', () => {
+    if (controller) controller.abort();
+  });
+  resetBtn.addEventListener('click', clearConversation);
+  attachBtn.addEventListener('click', () => fileInput.click());
+  micBtn.addEventListener('click', toggleRecording);
+  newChatBtn.addEventListener('click', createConversation);
+  sidebarToggle.addEventListener('click', () => document.body.classList.toggle('sidebar-open'));
+  settingsBtn.addEventListener('click', openSettings);
+  settingsCancelBtn.addEventListener('click', closeSettings);
+  settingsSaveBtn.addEventListener('click', saveSettings);
+
+  settingsModal.addEventListener('click', (event) => {
+    if (event.target === settingsModal) closeSettings();
+  });
+
+  fileInput.addEventListener('change', () => {
+    addFiles(fileInput.files);
+    fileInput.value = '';
+  });
+
+  inputEl.addEventListener('input', autoResize);
+  inputEl.addEventListener('keydown', (event) => {
+    if (event.key === 'Enter' && !event.shiftKey && !event.isComposing) {
+      event.preventDefault();
+      sendMessage();
+    }
+  });
+
+  inputEl.addEventListener('paste', (event) => {
+    if (!event.clipboardData) return;
+    const files = Array.from(event.clipboardData.items)
+      .filter((item) => item.type.startsWith('image/'))
+      .map((item) => item.getAsFile())
+      .filter(Boolean);
+    if (files.length) {
+      event.preventDefault();
+      addFiles(files);
+    }
+  });
+
+  chatContainer.addEventListener('dragover', (event) => event.preventDefault());
+  chatContainer.addEventListener('drop', (event) => {
+    if (!event.dataTransfer || !event.dataTransfer.files.length) return;
+    event.preventDefault();
+    addFiles(event.dataTransfer.files);
+  });
+
+  document.addEventListener('keydown', (event) => {
+    if (event.key === 'Escape' && !settingsModal.hidden) closeSettings();
+  });
+
+  chatBox.addEventListener('click', (event) => {
+    const copyCodeBtn = event.target.closest('.copy-code');
+    if (copyCodeBtn) {
+      const block = copyCodeBtn.closest('.code-block');
+      const codeEl = block ? block.querySelector('code') : null;
+      if (codeEl) copyText(codeEl.textContent || '');
+      return;
+    }
+
+    const button = event.target.closest('.msg-actions button');
+    if (!button) return;
+
+    const messageEl = button.closest('.message');
+    if (!messageEl) return;
+
+    const index = Number(messageEl.dataset.index);
+    if (!Number.isInteger(index)) return;
+
+    const action = button.dataset.action;
+    const message = active ? active.messages[index] : null;
+
+    if (action === 'copy') {
+      copyText(message ? message.text : '');
+    } else if (action === 'regen') {
+      regenerate();
+    } else if (action === 'branch') {
+      branchFrom(index);
+    }
+  });
+
+  loadConversations();
+  if (!conversations.length) conversations.push(newConversation());
+  active = conversations[0];
+  renderSidebar();
+  updateHeader();
+  renderConversation();
+  applyCapsToUI();
+  initAI();
+</script>
+
+</body>
+</html>
